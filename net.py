@@ -8,7 +8,7 @@ import os
 
 class InforNet(object):
     # network class for Information Pursue Model
-    def __init__(self, batch_size, lamb_batch_num, network_percent, train_path):
+    def __init__(self, batch_size, lamb_net, network_percent, train_path, train_que, test_que):
         self.train_dir = train_path
         self.image_shape = (227, 227, 3)
         self.weight_decay = 0.1
@@ -18,11 +18,9 @@ class InforNet(object):
         self.network_percent = network_percent
         self.dataset_percent = 0.05
         self.batch_size = batch_size
-        self.lamb_batch_num = lamb_batch_num
-        self.train_que = Queue.Queue(maxsize=1000)
-        self.test_que = Queue.Queue(maxsize=1000)
-        self.train_reader = dataset.Reader(self.train_que, os.path.join(self.train_dir, 'train_caltech_lmdb_%s' % str(self.dataset_percent)))
-        self.test_reader = dataset.Reader(self.test_que, os.path.join(self.train_dir, 'test_caltech_lmdb_%s' % str(self.dataset_percent)))
+        self.lamb_net = lamb_net
+        self.train_que = train_que
+        self.test_que = test_que
         self.devices = ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']
         self.net_device = self.devices[3]
         self.net_tensors = dict()
@@ -255,6 +253,16 @@ class InforNet(object):
             net_summary_writer.add_summary(net_summary_str)
             checkpoint_path = os.path.join(self.train_dir, 'information_pursue_%d_model.ckpt' % self.dataset_percent)
             net_saver.save(sess, checkpoint_path)
+
+    def train_network(self):
+        self.init_feature_network()
+        for step in xrange(self.iteration_max_steps):
+            self.train_process()
+        self.end_feature_network()
+
+    def run(self):
+        self.build_network()
+        self.train_network()
 
 
 class LambNet(object):
