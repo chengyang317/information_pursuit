@@ -27,9 +27,9 @@ class Reader(Thread):
 
 
 class DataSet(object):
-    def __init__(self, percent):
-        self.image_dir = '/scratch/dataset/256_ObjectCategories'
-        self.dataset_dir = '/scratch/dataset/information_pursue'
+    def __init__(self, percent, images_path, dataset_path):
+        self.image_dir = images_path
+        self.dataset_dir = dataset_path
         if not os.path.exists(self.dataset_dir):
             os.mkdir(self.dataset_dir)
         self.percent = percent
@@ -39,8 +39,7 @@ class DataSet(object):
         self.train_lmdb_path = os.path.join(self.dataset_dir, self.train_lmdb_name)
         self.test_lmdb_path = os.path.join(self.dataset_dir, self.test_lmdb_name)
         self.train_map_size = 10000000000000
-        self.test_map_size = 10000000000000
-        self.image_path_dic = self.create_image_path_dict()
+        self.test_map_size = 100000000000000
 
     def create_image_path_dict(self):
         sub_dir_names = os.listdir(self.image_dir)
@@ -67,13 +66,16 @@ class DataSet(object):
     def create_lmdb(self):
         train_env = lmdb.open(self.train_lmdb_path, map_size=self.train_map_size)
         test_env = lmdb.open(self.test_lmdb_path, map_size=self.test_map_size)
-        image_path_dic = self.image_path_dic
+        image_path_dic = self.create_image_path_dict()
         train_image_tuples = list()
         test_image_tuples = list()
         for class_label, image_paths in image_path_dic.iteritems():
             train_nums = int(len(image_paths) * self.percent)
+            test_percent = (1 - self.percent) if self.percent >= 0.8 else 0.2
+            test_nums = int(len(image_paths) * test_percent)
             train_image_paths = random.sample(image_paths, train_nums)
             test_image_paths = [image_path for image_path in image_paths if image_path not in train_image_paths]
+            test_image_paths = random.sample(test_image_paths, test_nums)
             train_image_tuples.extend([(train_image_path, class_label - 1) for train_image_path in train_image_paths])
             test_image_tuples.extend([(test_image_path, class_label - 1) for test_image_path in test_image_paths])
         random.shuffle(train_image_tuples)
