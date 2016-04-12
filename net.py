@@ -100,6 +100,7 @@ class InforNet(object):
             labels_unique, _ = tf.unique(labels)
             labels_num = tf.size(labels_unique)
             logits = tf.gather(logits, indices=labels_unique)
+            lambs = tf.gather(lambs, indices=labels_unique)
             # set the value of each row to True when it occurs in labels
             templete = tf.tile(tf.expand_dims(labels_unique, dim=1), [1, self.batch_size])
             labels_expand = tf.tile(tf.expand_dims(labels, dim=0), [labels_num, 1])
@@ -196,7 +197,7 @@ class InforNet(object):
         for i in self.batch_size:
             datas[i, :] = image_data['data'].astype(dtype=np.float32)
             labels[i] = int(image_data['labels'])
-
+        return datas, labels
 
     def train_network(self, lamb):
         with self.net_graph.as_default(), tf.device(self.net_device):
@@ -212,23 +213,14 @@ class InforNet(object):
             net_loss = net_tensors['net_loss']
             input_dict = {lambda_placeholder: lamb}
 
-            net_total_loss_value = None
             for step in xrange(self.net_train_maxstep):
-                train_post_images, _ = self.distorted_inputs(train=True, post=True)
-                train_nega_images, _ = self.distorted_inputs(train=True, post=False)
-                input_dict.update({post_images_placeholder: train_post_images,
-                                   nega_images_placeholder: train_nega_images})
+                image_datas, image_labels = self.fetch_datas(self.train_que)
+                input_dict.update({images_placeholder: image_datas,
+                                   labels_placeholder: image_labels})
 
-                _, net_total_loss_value = sess.run([net_train_op, net_total_loss], feed_dict=input_dict)
-                kernel_value, kernel_loss_value, post_logits_value, net_loss_value, nega_logits_value = sess.run(
-                    [kernel, kernel_loss, post_logits, net_loss, nega_logits], feed_dict=input_dict)
-                # log_z_value, temp_value = sess.run([log_z, temp])
-
-                print('step is %d, weight_value is %f, post logits is %f, nega logits is %f' % (step,
-                        kernel_value.max(), post_logits_value.mean(), nega_logits_value.mean()))
-                # print("kernel loss is %f, loss is %f, total loss is %f, " % (kernel_loss_value,
-                #         net_loss_value, net_total_loss_value))
-            return net_total_loss_value
+                _, total_loss_value = sess.run([net_train_op, net_total_loss], feed_dict=input_dict)
+                print('step is %d, total_loss is %f' % (step, total_loss_value))
+            return total_loss_value
 
     def init_net_network(self):
         with self.net_graph.as_default(), tf.device(self.net_device):
@@ -237,10 +229,10 @@ class InforNet(object):
             net_init_op = net_tensors['net_init_op']
 
             sess.run(net_init_op)
-            self.train_net(np.array(0.5))
+            self.train_net(np.array([0.5] * self.batch_size))
 
     def train_process(self):
-        lambda_value = self.compute_lambda()
+        lambs = self.compute_lambda()
         self.train_net(lambda_value)
 
     def end_net_network(self):
@@ -266,4 +258,56 @@ class InforNet(object):
             net_summary_writer.add_summary(net_summary_str)
             checkpoint_path = os.path.join(self.train_dir, 'information_pursue_%d_model.ckpt' % self.dataset_percent)
             net_saver.save(sess, checkpoint_path)
+
+
+class LambNet(object):
+    def __init__(self, logits, labels):
+        self.logits = logits
+        self.batch_size = self.logits.shape[0]
+        self.devices = ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']
+        self.net_device = self.devices[2]
+        self.net_tensors = dict()
+        self.net_graph = tf.Graph()
+        self.net_sess = tf.Session(graph=self.net_graph)
+
+    def build_network(self):
+        with tf.name_scope('lamb_net'):
+            logits = tf.placeholder(dtype=tf.float32, shape=(self.batch_size, 227, 227, 3))
+            labels = tf.placeholder(dtype=tf.int32, shape=(self.batch_size,))
+
+            # put a sigfunction on logits and then transpose
+            logits = tf.transpose(framwork.sig_func(logits))
+            # according to the labels, erase rows which is not in labels
+            labels_unique, _ = tf.unique(labels)
+            labels_num = tf.size(labels_unique)
+            logits = tf.gather(logits, indices=labels_unique)
+            lambs = tf.gather(lambs, indices=labels_unique)
+            # set the value of each row to True when it occurs in labels
+            templete = tf.tile(tf.expand_dims(labels_unique, dim=1), [1, self.batch_size])
+            labels_expand = tf.tile(tf.expand_dims(labels, dim=0), [labels_num, 1])
+            indict_logic = tf.equal(labels_expand, templete)
+            # split the tensor along rows
+            logit_list = tf.split(0, labels_num, templete)
+            indict_logic_list = tf.split(0, labels_num, indict_logic)
+            lambda_list = tf.split(0, self.image_classes, lambs)
+
+            loss_list = map(framwork.loss_func(), logit_list, indict_logic_list, lambda_list)
+            losses = tf.add_n(loss_list)
+            tensors_dict = {'labels_unique': labels_unique, 'templete': templete, 'logits_sig_trans': logits,
+                            'net_losses': losses, 'indict_logic': indict_logic}
+        return tensors_dict
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
