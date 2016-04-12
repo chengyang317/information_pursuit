@@ -25,16 +25,18 @@ class InforNet(object):
         self.net_device = self.devices[3]
         self.net_tensors = dict()
         self.net_graph = tf.Graph()
+        self.log_device_placement = True
         config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=self.log_device_placement)
         config.gpu_options.allocator_type = 'BFC'
         self.net_sess = tf.Session(graph=self.net_graph, config=config)
+        self.build_network()
 
     def net_placeholders(self):
         with tf.name_scope('net_placeholders'):
             shape = (self.batch_size, self.image_shape[0], self.image_shape[1], self.image_shape[2])
             images_placeholder = tf.placeholder(dtype=tf.float32, shape=shape, name='images_placeholder')
             labels_placeholder = tf.placeholder(dtype=tf.int32, shape=shape[0], name='labels_placeholder')
-            lambda_placeholder = tf.placeholder(dtype=tf.float32, name='lambda_placeholder')
+            lambda_placeholder = tf.placeholder(dtype=tf.float32, shape=self.image_classes, name='lambda_placeholder')
         tensors_dict = {'images_placeholder': images_placeholder, 'labels_placeholder': labels_placeholder,
                         'lambda_placeholder': lambda_placeholder}
         return tensors_dict
@@ -261,7 +263,6 @@ class InforNet(object):
         self.end_feature_network()
 
     def run(self):
-        self.build_network()
         self.train_network()
 
 
@@ -279,7 +280,7 @@ class LambNet(object):
     def build_network(self):
         net_tensors = self.net_tensors
         with self.net_graph.as_default(), tf.device(self.net_device):
-            logits = tf.placeholder(dtype=tf.float32, shape=(self.batch_size, 227, 227, 3))
+            logits = tf.placeholder(dtype=tf.float32, shape=(self.batch_size, self.image_classes))
             labels = tf.placeholder(dtype=tf.int32, shape=(self.batch_size,))
             lambs = tf.placeholder(dtype=tf.float32, shape=(self.image_classes,))
             # put a sigfunction on logits and then transpose
@@ -287,7 +288,7 @@ class LambNet(object):
             # according to the labels, erase rows which is not in labels
 
             labels_unique = tf.constant(range(self.image_classes), dtype=tf.int32)
-            labels_num = tf.size(labels_unique)
+            labels_num = self.image_classes
             logits = tf.gather(logits, indices=labels_unique)
             lambs = tf.gather(lambs, indices=labels_unique)
             # set the value of each row to True when it occurs in labels
@@ -297,16 +298,23 @@ class LambNet(object):
             # split the tensor along rows
             logit_list = tf.split(0, labels_num, logits)
             indict_logic_list = tf.split(0, labels_num, indict_logic)
-            lambda_list = tf.split(0, self.image_classes, lambs)
-
-            left_right_tuples = map(framwork.lamb_func(), logit_list, indict_logic_list, lambda_list)
-            net_tensors.update({'left_right_tuples': left_right_tuples, 'logits': logits, 'labels': labels, 'lambs': lambs})
+            lamb_list = tf.split(0, self.image_classes, lambs)
+            logit_list = [tf.squeeze(item) for item in logit_list]
+            indict_logic_list = [tf.squeeze(item) for item in indict_logic_list]
+            left_right_tuples = list()
+            for i in range(self.image_classes):
+                left_right_tuples.append(framwork.lamb_func(logit_list[i], indict_logic_list[i], lamb = lamb_list[i]))
+            # func = framwork.lamb_func()
+            # left_right_tuples = map(func, logit_list, indict_logic_list, lamb_list)
+            net_tensors.update({'left_right_tuples': left_right_tuples, 'logits': logits, 'labels': labels,
+                                'lambs': lambs})
 
     def compute_lambs(self, logits, labels):
         with self.net_graph.as_default(), tf.device(self.net_device):
             net_tensors = self.net_tensors
             lambs = [1.0] * self.image_classes
-            input_dict = {net_tensors['logits']: logits, net_tensors['labels']: labels, net_tensors['lambs']: np.array(lambs)}
+            input_dict = {net_tensors['logits']: logits, net_tensors['labels']: labels,
+                          net_tensors['lambs']: np.array(lambs)}
             sess = self.net_sess
             left_right_tuples = net_tensors['left_right_tuples']
             left_rights = list()
