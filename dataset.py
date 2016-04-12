@@ -41,14 +41,9 @@ class DataSet(object):
         self.test_lmdb_name = 'test_caltech_lmdb_%s' % str(percent)
         self.train_lmdb_path = os.path.join(self.dataset_dir, self.train_lmdb_name)
         self.test_lmdb_path = os.path.join(self.dataset_dir, self.test_lmdb_name)
-        self.set_map_size()
+        self.train_map_size = 10000000000000
+        self.test_map_size = 10000000000000
         self.image_path_dic = self.create_image_path_dict()
-
-    def set_map_size(self):
-        temp_dict = {'label': 5, 'data': np.ones((227, 227, 3), dtype=np.float32)}
-        temp_dict_size = len(pickle.dumps(temp_dict))
-        self.train_map_size = int(temp_dict_size * 256 * 1000 * self.percent)
-        self.test_map_size = int(temp_dict_size * 256 * 1000 * (1 - self.percent))
 
     def create_image_path_dict(self):
         sub_dir_names = os.listdir(self.image_dir)
@@ -90,18 +85,21 @@ class DataSet(object):
         image_data = dict()
         with train_env.begin(write=True) as train_txn:
             for index, (image_path, class_label) in enumerate(train_image_tuples):
+                if index == 1:
+                    break
                 image_data['label'] = class_label
                 image_data['data'] = self.extract_image(image_path)
                 str_id = '{:08}'.format(index)
-                train_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
+                str_data = pickle.dumps(image_data)
+                train_txn.put(str_id.encode('ascii'), str_data)
                 print('writing train %s: %s' % (str_id, image_path))
-        with test_env.begin(write=True) as test_txn:
-            for index, (image_path, class_label) in enumerate(test_image_tuples):
-                image_data['label'] = class_label
-                image_data['data'] = self.extract_image(image_path)
-                str_id = '{:08}'.format(index)
-                test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
-                print('writing test %s: %s' % (str_id, image_path))
+        # with test_env.begin(write=True) as test_txn:
+        #     for index, (image_path, class_label) in enumerate(test_image_tuples):
+        #         image_data['label'] = class_label
+        #         image_data['data'] = self.extract_image(image_path)
+        #         str_id = '{:08}'.format(index)
+        #         test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
+        #         print('writing test %s: %s' % (str_id, image_path))
 
 
 if __name__ == '__main__':
