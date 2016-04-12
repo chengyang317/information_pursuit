@@ -66,7 +66,7 @@ class DataSet(object):
 
     def extract_image(self, image_path):
         image = imread(image_path)
-        if len(image.data.shape) != 3:
+        if len(image.shape) != 3:
             return None
         image = resize(image, self.image_shape)
         data = image.astype(dtype=np.float32)

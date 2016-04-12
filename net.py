@@ -191,7 +191,12 @@ class InforNet(object):
             image_data = que.get()
             image_datas.append(image_data)
         que.task_done()
-        datas = np.nu
+        datas = np.empty((self.batch_size,) + self.image_shape, dtype=np.float32)
+        labels = np.empty(self.batch_size, dtype=np.int32)
+        for i in self.batch_size:
+            datas[i, :] = image_data['data'].astype(dtype=np.float32)
+            labels[i] = int(image_data['labels'])
+
 
     def train_network(self, lamb):
         with self.net_graph.as_default(), tf.device(self.net_device):
