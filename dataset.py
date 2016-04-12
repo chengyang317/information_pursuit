@@ -10,11 +10,14 @@ from skimage.io import imread
 from skimage.transform import resize
 from threading import Thread
 
+
 class Reader(Thread):
     def __init__(self, que, dataset_path):
         Thread.__init__(self)
         self.que = que
         self.dataset_path = dataset_path
+        self.setDaemon(True)
+
     def run(self):
         while True:
             env = lmdb.open(self.dataset_path)
@@ -22,10 +25,8 @@ class Reader(Thread):
                 cursor = txn.cursor()
                 for key, raw_value in cursor:
                     image_data = pickle.loads(raw_value)
-                    print('%i' % image_data.data)
-
-
-
+                    print('key is %s' % str(key))
+                    self.que.put(image_data)
 
 
 class DataSet(object):

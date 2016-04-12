@@ -3,20 +3,29 @@ __author__ = "Philip_Cheng"
 
 
 import tensorflow as tf
+import numpy as np
 import framwork
+import dataset
+import Queue
+import os
 
 
 class InforNet(object):
     # network class for Information Pursue Model
     def __init__(self, batch_size, network_percent, image_classes):
-        self.train_dir = './train'
+        self.train_dir = '/scratch/dataset/information_pursue'
         self.image_shape = (227, 227, 3)
         self.weight_decay = 0.1
         self.learning_rate = 1e-1
         self.net_train_maxstep = 5
         self.image_classes = image_classes
         self.network_percent = network_percent
+        self.dataset_percent = 0.05
         self.batch_size = batch_size
+        self.train_que = Queue.Queue(maxsize=1000)
+        self.test_que = Queue.Queue(maxsize=1000)
+        self.train_reader = dataset.Reader(self.train_que, os.path.join(self.train_dir, 'train_caltech_lmdb_%s' % str(self.dataset_percent)))
+        self.test_reader = dataset.Reader(self.test_que, os.path.join(self.train_dir, 'test_caltech_lmdb_%s' % str(self.dataset_percent)))
         self.devices = ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']
         self.net_device = self.devices[3]
         self.net_tensors = dict()
@@ -175,6 +184,14 @@ class InforNet(object):
             # create endwork tensor
             net_other_tensors = self.net_other()
             net_tensors.update(net_other_tensors)
+
+    def fetch_datas(self, que):
+        image_datas = list()
+        for i in self.batch_size:
+            image_data = que.get()
+            image_datas.append(image_data)
+        que.task_done()
+        datas = np.nu
 
     def train_network(self, lamb):
         with self.net_graph.as_default(), tf.device(self.net_device):
