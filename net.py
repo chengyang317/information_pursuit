@@ -1,7 +1,3 @@
-# coding=utf-8
-__author__ = "Philip_Cheng"
-
-
 import tensorflow as tf
 import numpy as np
 import framwork
@@ -106,7 +102,7 @@ class InforNet(object):
             labels_expand = tf.tile(tf.expand_dims(labels, dim=0), [labels_num, 1])
             indict_logic = tf.equal(labels_expand, templete)
             # split the tensor along rows
-            logit_list = tf.split(0, labels_num, templete)
+            logit_list = tf.split(0, labels_num, logits)
             indict_logic_list = tf.split(0, labels_num, indict_logic)
             lambda_list = tf.split(0, self.image_classes, lambs)
             
@@ -263,22 +259,27 @@ class InforNet(object):
 class LambNet(object):
     def __init__(self, logits, labels):
         self.logits = logits
+        self.labels = labels
         self.batch_size = self.logits.shape[0]
+        self.image_classes = 256
         self.devices = ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']
         self.net_device = self.devices[2]
         self.net_tensors = dict()
         self.net_graph = tf.Graph()
         self.net_sess = tf.Session(graph=self.net_graph)
+        self.build_network()
 
     def build_network(self):
+        net_tensors = self.net_tensors
         with tf.name_scope('lamb_net'):
             logits = tf.placeholder(dtype=tf.float32, shape=(self.batch_size, 227, 227, 3))
             labels = tf.placeholder(dtype=tf.int32, shape=(self.batch_size,))
-
+            lambs = tf.placeholder(dtype=tf.float32, shape=(self.image_classes,))
             # put a sigfunction on logits and then transpose
             logits = tf.transpose(framwork.sig_func(logits))
             # according to the labels, erase rows which is not in labels
-            labels_unique, _ = tf.unique(labels)
+
+            labels_unique = tf.constant(range(self.image_classes), dtype=tf.int32)
             labels_num = tf.size(labels_unique)
             logits = tf.gather(logits, indices=labels_unique)
             lambs = tf.gather(lambs, indices=labels_unique)
@@ -287,15 +288,57 @@ class LambNet(object):
             labels_expand = tf.tile(tf.expand_dims(labels, dim=0), [labels_num, 1])
             indict_logic = tf.equal(labels_expand, templete)
             # split the tensor along rows
-            logit_list = tf.split(0, labels_num, templete)
+            logit_list = tf.split(0, labels_num, logits)
             indict_logic_list = tf.split(0, labels_num, indict_logic)
             lambda_list = tf.split(0, self.image_classes, lambs)
 
-            loss_list = map(framwork.loss_func(), logit_list, indict_logic_list, lambda_list)
-            losses = tf.add_n(loss_list)
-            tensors_dict = {'labels_unique': labels_unique, 'templete': templete, 'logits_sig_trans': logits,
-                            'net_losses': losses, 'indict_logic': indict_logic}
-        return tensors_dict
+            left_right_tuples = map(framwork.lamb_func(), logit_list, indict_logic_list, lambda_list)
+            net_tensors.update({'left_right_tuples': left_right_tuples, 'logits': logits, 'labels': labels, 'lambs': lambs})
+
+    def compute_lambs(self):
+        net_tensors = self.net_tensors
+        logits = self.logits
+        labels = self.labels
+        lambs = [1.0] * self.image_classes
+        input_dict = {net_tensors['logits']: logits, net_tensors['labels']: labels, net_tensors['lambs']: np.array(lambs)}
+        sess = self.net_sess
+        left_right_tuples = net_tensors['left_right_tuples']
+        left_rights = list()
+
+        states = [None] * self.image_classes
+        steps = [0.1] * self.image_classes
+        moment_reg = 1.3
+        moment_rev = 0.5
+        map(lambda tup: left_rights.extend([tup[0], tup[1]]), left_right_tuples)
+        for i in range(20):
+            left_right_values = sess.run(left_rights, feed_dict=input_dict)
+            for i in range(self.image_classes):
+                left = left_right_values[i]
+                right = left_right_values[i + 1]
+                lamb = lambs[i]
+                state = states[i]
+                step = steps[i]
+                state_now = False if left > right else True
+                if state == None:
+                    state = state_now
+                    step = step * moment_reg
+                    step_vec = step * moment_reg if state_now else (- step * moment_reg)
+                    lamb = lamb + step_vec
+                elif state:
+                    state = state_now
+                    step = step * moment_reg if state_now else step * moment_rev
+                    step_vec = step if state_now else (- step)
+                    lamb = lamb + step_vec
+                else:
+                    state = state_now
+                    step = step * moment_rev if state_now else step * moment_reg
+                    step_vec = (- step) if state_now else step
+                    lamb = lamb + step_vec
+        return lambs
+
+
+
+
 
 
 
