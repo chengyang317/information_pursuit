@@ -41,6 +41,13 @@ class DataSet(object):
         self.train_map_size = 10000000000000
         self.test_map_size = 100000000000000
 
+    def lmdb_exist(self):
+        return os.path.exists(self.train_lmdb_path) and os.path.exists(self.test_lmdb_path)
+
+    def lmdb_size(self):
+        train_image_tuples, test_image_tuples = self.create_image_tuples()
+        return len(train_image_tuples), len(test_image_tuples)
+
     def create_image_path_dict(self):
         sub_dir_names = os.listdir(self.image_dir)
         image_path_dic = dict()
@@ -63,9 +70,7 @@ class DataSet(object):
         data = image.astype(dtype=np.float32)
         return data
 
-    def create_lmdb(self):
-        train_env = lmdb.open(self.train_lmdb_path, map_size=self.train_map_size)
-        test_env = lmdb.open(self.test_lmdb_path, map_size=self.test_map_size)
+    def create_image_tuples(self):
         image_path_dic = self.create_image_path_dict()
         train_image_tuples = list()
         test_image_tuples = list()
@@ -80,7 +85,12 @@ class DataSet(object):
             test_image_tuples.extend([(test_image_path, class_label - 1) for test_image_path in test_image_paths])
         random.shuffle(train_image_tuples)
         random.shuffle(test_image_tuples)
+        return train_image_tuples, test_image_tuples
 
+    def create_lmdb(self):
+        train_env = lmdb.open(self.train_lmdb_path, map_size=self.train_map_size)
+        test_env = lmdb.open(self.test_lmdb_path, map_size=self.test_map_size)
+        train_image_tuples, test_image_tuples = self.create_image_tuples()
         image_data = dict()
         with train_env.begin(write=True) as train_txn:
             for index, (image_path, class_label) in enumerate(train_image_tuples):
@@ -100,7 +110,3 @@ class DataSet(object):
                 test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
                 print('writing test %s: %s' % (str_id, image_path))
 
-
-if __name__ == '__main__':
-    data_set = DataSet(0.05)
-    data_set.create_lmdb()
