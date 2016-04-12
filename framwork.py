@@ -74,25 +74,26 @@ def add_conv_layer(layer_name, input_images, kernel_attrs, norm_attrs=None, pool
         kernel, _ = variable_with_weight_decay(name='kernel', shape=kernel_attrs['shape'],
                                                stddev=kernel_attrs['stddev'])
         tensor_names.append('kernel')
-        conv = tf.nn.conv2d(input_images, kernel, kernel_attrs['strides'], padding=kernel_attrs[padding], name='conv')
+        conv = tf.nn.conv2d(input_images, kernel, kernel_attrs['strides'], padding=kernel_attrs['padding'], name='conv')
         tensor_names.append('conv')
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
         bias = tf.nn.bias_add(conv, biase)
         relu = tf.nn.relu(bias, name='relu')
         tensor_names.append('relu')
         activation_summary(relu)
-        if not norm_attrs:
+        if norm_attrs:
             norm = tf.nn.local_response_normalization(relu, depth_radius=norm_attrs['depth_radius'],
                                                       bias=norm_attrs['bias'], alpha=norm_attrs['alpha'],
                                                       beta=norm_attrs['beta'], name='norm')
             tensor_names.append('norm')
-        if not pool_attrs:
-            pool = tf.nn.max_pool(norm, ksize=pool_attrs['ksize'], strides=pool_attrs['strides'],
+        if pool_attrs:
+            input = norm if norm_attrs else relu
+            pool = tf.nn.max_pool(input, ksize=pool_attrs['ksize'], strides=pool_attrs['strides'],
                                   padding=pool_attrs['padding'], name='pool')
             tensor_names.append('pool')
 
         for tensor_name in tensor_names:
-            tensors_dict.update({variable.name + '_' + tensor_name: eval(tensor_name)})
+            tensors_dict.update({layer_name + '_' + tensor_name: eval(tensor_name)})
     return tensors_dict
 
 
@@ -109,7 +110,7 @@ def add_full_layer(layer_name, input_images, kernel_attrs):
         tensor_names.append('relu')
         activation_summary(relu)
         for tensor_name in tensor_names:
-            tensors_dict.update({variable.name + '_' + tensor_name: eval(tensor_name)})
+            tensors_dict.update({layer_name + '_' + tensor_name: eval(tensor_name)})
     return tensors_dict
 
 
@@ -124,7 +125,7 @@ def add_softmax_layer(layer_name, input_images, kernel_attrs):
         tensor_names.append('softmax')
         activation_summary(softmax)
         for tensor_name in tensor_names:
-            tensors_dict.update({variable.name + '_' + tensor_name: eval(tensor_name)})
+            tensors_dict.update({layer_name + '_' + tensor_name: eval(tensor_name)})
     return tensors_dict
 
 

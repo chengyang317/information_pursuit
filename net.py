@@ -82,7 +82,7 @@ class InforNet(object):
             # softmax
             input_image = tensors_dict[layer_name + '_relu']
             layer_name = 'softmax'
-            update_kernel = {'shape': [int(4096 * network_percent, self.image_classes)], 'stddev': 1e-2}
+            update_kernel = {'shape': [int(4096 * network_percent), self.image_classes], 'stddev': 1e-2}
             kernel_attrs.update(update_kernel)
             tensors_dict.update(framwork.add_softmax_layer(layer_name, input_image, kernel_attrs=kernel_attrs))
             # add a alias name to logits
@@ -100,9 +100,11 @@ class InforNet(object):
             lambs = tf.gather(lambs, indices=labels_unique)
             # set the value of each row to True when it occurs in labels
             templete = tf.tile(tf.expand_dims(labels_unique, dim=1), [1, self.batch_size])
-            labels_expand = tf.tile(tf.expand_dims(labels, dim=0), [labels_num, 1])
+            labels_expand = tf.tile(tf.expand_dims(labels, dim=0), tf.pack([labels_num, 1]))
             indict_logic = tf.equal(labels_expand, templete)
             # split the tensor along rows
+
+
             logit_list = tf.split(0, labels_num, logits)
             indict_logic_list = tf.split(0, labels_num, indict_logic)
             lambda_list = tf.split(0, self.image_classes, lambs)
