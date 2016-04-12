@@ -10,12 +10,6 @@ from skimage.io import imread
 from skimage.transform import resize
 from threading import Thread
 
-class ImageData(object):
-    def __init__(self, data_shape):
-        self.data = np.zeros(data_shape, dtype=np.float64)
-        self.label = np.zeros(1, dtype=np.int64)
-
-
 class Reader(Thread):
     def __init__(self, que, dataset_path):
         Thread.__init__(self)
@@ -37,7 +31,7 @@ class Reader(Thread):
 class DataSet(object):
     def __init__(self, percent):
         self.image_dir = '/scratch/dataset/256_ObjectCategories'
-        self.dataset_dir = '/scratch/dataset/informatin_pursue'
+        self.dataset_dir = '/scratch/dataset/information_pursue'
         if not os.path.exists(self.dataset_dir):
             os.mkdir(self.dataset_dir)
         self.percent = percent
@@ -46,11 +40,16 @@ class DataSet(object):
         self.test_lmdb_name = 'test_caltech_lmdb_%s' % str(percent)
         self.train_lmdb_path = os.path.join(self.dataset_dir, self.train_lmdb_name)
         self.test_lmdb_path = os.path.join(self.dataset_dir, self.test_lmdb_name)
-        self.train_map_size = int(len(pickle.dumps(ImageData(self.image_shape))) * 256 * 1000 * percent)
-        self.test_map_size = int(len(pickle.dumps(ImageData(self.image_shape))) * 256 * 1000 * (1-percent))
-        self.image_path_dic = self.image_path_list()
+        self.set_map_size()
+        self.image_path_dic = self.create_image_path_dict()
 
-    def image_path_list(self):
+    def set_map_size(self):
+        temp_dict = {'label': 5, 'data': np.ones((227, 227, 3), dtype=np.float32)}
+        temp_dict_size = len(pickle.dumps(temp_dict))
+        self.train_map_size = int(temp_dict_size * 256 * 1000 * self.percent)
+        self.test_map_size = int(temp_dict_size * 256 * 1000 * (1 - self.percent))
+
+    def create_image_path_dict(self):
         sub_dir_names = os.listdir(self.image_dir)
         image_path_dic = dict()
         for sub_dir_name in sub_dir_names:
@@ -66,6 +65,8 @@ class DataSet(object):
 
     def extract_image(self, image_path):
         image = imread(image_path)
+        if len(image.data.shape) != 3:
+            return None
         image = resize(image, self.image_shape)
         data = image.astype(dtype=np.float32)
         return data
@@ -73,7 +74,6 @@ class DataSet(object):
     def create_lmdb(self):
         train_env = lmdb.open(self.train_lmdb_name, map_size=self.train_map_size)
         test_env = lmdb.open(self.test_lmdb_name, map_size=self.test_map_size)
-        image_data = ImageData(self.image_shape)
         image_path_dic = self.image_path_dic
         train_image_tuples = list()
         test_image_tuples = list()
@@ -86,20 +86,18 @@ class DataSet(object):
         random.shuffle(train_image_tuples)
         random.shuffle(test_image_tuples)
 
-        with train_env.begin(write=True) as train_txn, test_env.begin(write=True) as test_txn:
+        image_data = dict()
+        with train_env.begin(write=True) as train_txn:
             for index, (image_path, class_label) in enumerate(train_image_tuples):
-                image_data.label = class_label
-                image_data.data = self.extract_image(image_path)
-                if len(image_data.data.shape) != 3:
-                    continue
+                image_data['label'] = class_label
+                image_data['data'] = self.extract_image(image_path)
                 str_id = '{:08}'.format(index)
                 train_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
                 print('writing train %s: %s' % (str_id, image_path))
+        with test_env.begin(write=True) as test_txn:
             for index, (image_path, class_label) in enumerate(test_image_tuples):
-                image_data.label = class_label
-                image_data.data = self.extract_image(image_path)
-                if len(image_data.data.shape) != 3:
-                    continue
+                image_data['label'] = class_label
+                image_data['data'] = self.extract_image(image_path)
                 str_id = '{:08}'.format(index)
                 test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
                 print('writing test %s: %s' % (str_id, image_path))
