@@ -42,7 +42,7 @@ class DataSet(object):
         self.train_lmdb_path = os.path.join(self.dataset_dir, self.train_lmdb_name)
         self.test_lmdb_path = os.path.join(self.dataset_dir, self.test_lmdb_name)
         self.train_map_size = 10000000000000
-        self.test_map_size = 10000000000000
+        self.test_map_size = 100000000000000
         self.image_path_dic = self.create_image_path_dict()
 
     def create_image_path_dict(self):
@@ -75,8 +75,11 @@ class DataSet(object):
         test_image_tuples = list()
         for class_label, image_paths in image_path_dic.iteritems():
             train_nums = int(len(image_paths) * self.percent)
+            test_percent = 0.2 if self.percent <= 0.8 else (1 - self.percent)
+            test_nums = int(len(image_paths) * test_percent)
             train_image_paths = random.sample(image_paths, train_nums)
             test_image_paths = [image_path for image_path in image_paths if image_path not in train_image_paths]
+            test_image_paths = random.sample(test_image_paths, test_nums)
             train_image_tuples.extend([(train_image_path, class_label - 1) for train_image_path in train_image_paths])
             test_image_tuples.extend([(test_image_path, class_label - 1) for test_image_path in test_image_paths])
         random.shuffle(train_image_tuples)
@@ -85,21 +88,19 @@ class DataSet(object):
         image_data = dict()
         with train_env.begin(write=True) as train_txn:
             for index, (image_path, class_label) in enumerate(train_image_tuples):
-                if index == 1:
-                    break
                 image_data['label'] = class_label
                 image_data['data'] = self.extract_image(image_path)
                 str_id = '{:08}'.format(index)
                 str_data = pickle.dumps(image_data)
                 train_txn.put(str_id.encode('ascii'), str_data)
                 print('writing train %s: %s' % (str_id, image_path))
-        # with test_env.begin(write=True) as test_txn:
-        #     for index, (image_path, class_label) in enumerate(test_image_tuples):
-        #         image_data['label'] = class_label
-        #         image_data['data'] = self.extract_image(image_path)
-        #         str_id = '{:08}'.format(index)
-        #         test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
-        #         print('writing test %s: %s' % (str_id, image_path))
+        with test_env.begin(write=True) as test_txn:
+            for index, (image_path, class_label) in enumerate(test_image_tuples):
+                image_data['label'] = class_label
+                image_data['data'] = self.extract_image(image_path)
+                str_id = '{:08}'.format(index)
+                test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
+                print('writing test %s: %s' % (str_id, image_path))
 
 
 if __name__ == '__main__':
