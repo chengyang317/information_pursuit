@@ -73,8 +73,8 @@ class DataSet(object):
         return data
 
     def create_lmdb(self):
-        train_env = lmdb.open(self.train_lmdb_name, map_size=self.train_map_size)
-        test_env = lmdb.open(self.test_lmdb_name, map_size=self.test_map_size)
+        train_env = lmdb.open(self.train_lmdb_path, map_size=self.train_map_size)
+        test_env = lmdb.open(self.test_lmdb_path, map_size=self.test_map_size)
         image_path_dic = self.image_path_dic
         train_image_tuples = list()
         test_image_tuples = list()
