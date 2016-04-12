@@ -8,16 +8,17 @@ import os
 
 class InforNet(object):
     # network class for Information Pursue Model
-    def __init__(self, batch_size, network_percent, image_classes):
-        self.train_dir = '/scratch/dataset/information_pursue'
+    def __init__(self, batch_size, lamb_batch_num, network_percent, train_path):
+        self.train_dir = train_path
         self.image_shape = (227, 227, 3)
         self.weight_decay = 0.1
         self.learning_rate = 1e-1
         self.net_train_maxstep = 5
-        self.image_classes = image_classes
+        self.image_classes = 256
         self.network_percent = network_percent
         self.dataset_percent = 0.05
         self.batch_size = batch_size
+        self.lamb_batch_num = lamb_batch_num
         self.train_que = Queue.Queue(maxsize=1000)
         self.test_que = Queue.Queue(maxsize=1000)
         self.train_reader = dataset.Reader(self.train_que, os.path.join(self.train_dir, 'train_caltech_lmdb_%s' % str(self.dataset_percent)))
@@ -257,10 +258,8 @@ class InforNet(object):
 
 
 class LambNet(object):
-    def __init__(self, logits, labels):
-        self.logits = logits
-        self.labels = labels
-        self.batch_size = self.logits.shape[0]
+    def __init__(self, batch_size):
+        self.batch_size = batch_size
         self.image_classes = 256
         self.devices = ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']
         self.net_device = self.devices[2]
@@ -271,7 +270,7 @@ class LambNet(object):
 
     def build_network(self):
         net_tensors = self.net_tensors
-        with tf.name_scope('lamb_net'):
+        with self.net_graph.as_default(), tf.device(self.net_device):
             logits = tf.placeholder(dtype=tf.float32, shape=(self.batch_size, 227, 227, 3))
             labels = tf.placeholder(dtype=tf.int32, shape=(self.batch_size,))
             lambs = tf.placeholder(dtype=tf.float32, shape=(self.image_classes,))
@@ -295,46 +294,45 @@ class LambNet(object):
             left_right_tuples = map(framwork.lamb_func(), logit_list, indict_logic_list, lambda_list)
             net_tensors.update({'left_right_tuples': left_right_tuples, 'logits': logits, 'labels': labels, 'lambs': lambs})
 
-    def compute_lambs(self):
-        net_tensors = self.net_tensors
-        logits = self.logits
-        labels = self.labels
-        lambs = [1.0] * self.image_classes
-        input_dict = {net_tensors['logits']: logits, net_tensors['labels']: labels, net_tensors['lambs']: np.array(lambs)}
-        sess = self.net_sess
-        left_right_tuples = net_tensors['left_right_tuples']
-        left_rights = list()
+    def compute_lambs(self, logits, labels):
+        with self.net_graph.as_default(), tf.device(self.net_device):
+            net_tensors = self.net_tensors
+            lambs = [1.0] * self.image_classes
+            input_dict = {net_tensors['logits']: logits, net_tensors['labels']: labels, net_tensors['lambs']: np.array(lambs)}
+            sess = self.net_sess
+            left_right_tuples = net_tensors['left_right_tuples']
+            left_rights = list()
 
-        states = [None] * self.image_classes
-        steps = [0.1] * self.image_classes
-        moment_reg = 1.3
-        moment_rev = 0.5
-        map(lambda tup: left_rights.extend([tup[0], tup[1]]), left_right_tuples)
-        for i in range(20):
-            left_right_values = sess.run(left_rights, feed_dict=input_dict)
-            for i in range(self.image_classes):
-                left = left_right_values[i]
-                right = left_right_values[i + 1]
-                lamb = lambs[i]
-                state = states[i]
-                step = steps[i]
-                state_now = False if left > right else True
-                if state == None:
-                    state = state_now
-                    step = step * moment_reg
-                    step_vec = step * moment_reg if state_now else (- step * moment_reg)
-                    lamb = lamb + step_vec
-                elif state:
-                    state = state_now
-                    step = step * moment_reg if state_now else step * moment_rev
-                    step_vec = step if state_now else (- step)
-                    lamb = lamb + step_vec
-                else:
-                    state = state_now
-                    step = step * moment_rev if state_now else step * moment_reg
-                    step_vec = (- step) if state_now else step
-                    lamb = lamb + step_vec
-        return lambs
+            states = [None] * self.image_classes
+            steps = [0.1] * self.image_classes
+            moment_reg = 1.3
+            moment_rev = 0.5
+            map(lambda tup: left_rights.extend([tup[0], tup[1]]), left_right_tuples)
+            for i in range(20):
+                left_right_values = sess.run(left_rights, feed_dict=input_dict)
+                for i in range(self.image_classes):
+                    left = left_right_values[i]
+                    right = left_right_values[i + 1]
+                    lamb = lambs[i]
+                    state = states[i]
+                    step = steps[i]
+                    state_now = False if left > right else True
+                    if state == None:
+                        state = state_now
+                        step = step * moment_reg
+                        step_vec = step * moment_reg if state_now else (- step * moment_reg)
+                        lamb = lamb + step_vec
+                    elif state:
+                        state = state_now
+                        step = step * moment_reg if state_now else step * moment_rev
+                        step_vec = step if state_now else (- step)
+                        lamb = lamb + step_vec
+                    else:
+                        state = state_now
+                        step = step * moment_rev if state_now else step * moment_reg
+                        step_vec = (- step) if state_now else step
+                        lamb = lamb + step_vec
+            return lambs
 
 
 
