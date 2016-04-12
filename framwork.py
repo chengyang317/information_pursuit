@@ -1,6 +1,3 @@
-# coding=utf-8
-__author__ = "Philip_Cheng"
-
 import tensorflow as tf
 import re
 
@@ -143,6 +140,20 @@ def loss_func(logit, logic, lamb):
     log_z = tf.log(tf.reduce_mean(tf.exp(logit_neg * lamb)))
     pos_value = tf.reduce_mean(logit_pos * lamb)
     return tf.sub(log_z, pos_value)
+
+
+def lamb_func(logit, logic, lamb):
+    logit_pos = tf.boolean_mask(logit, logic)
+    logit_neg = tf.boolean_mask(logit, tf.logical_not(logic))
+    logit_neg_exp = tf.exp(logit_neg * lamb)
+    z = tf.reduce_mean(logit_neg_exp)
+    left = tf.truediv(tf.reduce_mean(logit_neg * logit_neg_exp), z)
+    right = tf.reduce_mean(logit_pos)
+    return left, right
+
+
+
+
 
 
 

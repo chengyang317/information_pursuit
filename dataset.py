@@ -1,6 +1,3 @@
-# coding=utf-8
-__author__ = "Philip_Cheng"
-
 import numpy as np
 import lmdb
 import pickle
