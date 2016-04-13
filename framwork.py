@@ -136,11 +136,18 @@ def sig_func(logits):
 
 
 def loss_func(logit, logic, lamb):
-    logit_pos = tf.boolean_mask(logit, logic)
-    logit_neg = tf.boolean_mask(logit, tf.logical_not(logic))
-    log_z = tf.log(tf.reduce_mean(tf.exp(logit_neg * lamb)))
-    pos_value = tf.reduce_mean(logit_pos * lamb)
-    return tf.sub(log_z, pos_value)
+    def f1():
+        return tf.constant(0)
+
+    def f2():
+        logit_pos = tf.boolean_mask(logit, logic)
+        logit_neg = tf.boolean_mask(logit, tf.logical_not(logic))
+        log_z = tf.log(tf.reduce_mean(tf.exp(logit_neg * lamb)))
+        pos_value = tf.reduce_mean(logit_pos * lamb)
+        return tf.sub(log_z, pos_value)
+    pred = tf.logical_and(tf.logical_not(logic))
+    loss = tf.cond(pred, f1, f2)
+    return loss
 
 
 def lamb_func(logit, logic, lamb):

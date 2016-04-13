@@ -94,22 +94,22 @@ class InforNet(object):
             # put a sigfunction on logits and then transpose
             logits = tf.transpose(framwork.sig_func(logits))
             # according to the labels, erase rows which is not in labels
-            labels_unique, _ = tf.unique(labels)
-            labels_num = tf.size(labels_unique)
+            labels_unique = tf.constant(range(self.image_classes), dtype=tf.int32)
+            labels_num = self.image_classes
             logits = tf.gather(logits, indices=labels_unique)
             lambs = tf.gather(lambs, indices=labels_unique)
             # set the value of each row to True when it occurs in labels
             templete = tf.tile(tf.expand_dims(labels_unique, dim=1), [1, self.batch_size])
-            labels_expand = tf.tile(tf.expand_dims(labels, dim=0), tf.pack([labels_num, 1]))
+            labels_expand = tf.tile(tf.expand_dims(labels, dim=0), [labels_num, 1])
             indict_logic = tf.equal(labels_expand, templete)
             # split the tensor along rows
-
-
             logit_list = tf.split(0, labels_num, logits)
             indict_logic_list = tf.split(0, labels_num, indict_logic)
             lambda_list = tf.split(0, self.image_classes, lambs)
-            
-            loss_list = map(framwork.loss_func(), logit_list, indict_logic_list, lambda_list)
+            loss_list = list()
+            for i in range(self.image_classes):
+                loss_list.append(framwork.loss_func(logit_list[i], indict_logic_list[i], lambda_list[i]))
+            # loss_list = map(framwork.loss_func(), logit_list, indict_logic_list, lambda_list)
             losses = tf.add_n(loss_list)
             tensors_dict = {'labels_unique': labels_unique, 'templete': templete, 'logits_sig_trans': logits,
                             'net_losses': losses, 'indict_logic': indict_logic}
