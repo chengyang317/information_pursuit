@@ -8,7 +8,7 @@ def variable_on_cpu(name, shape, initializer):
     return var
 
 
-def variable_with_weight_decay(name, shape, stddev):
+def variable_with_stddev(name, shape, stddev):
     var = variable_on_cpu(name, shape, tf.truncated_normal_initializer(stddev=stddev))
     return var
 
@@ -17,8 +17,7 @@ def add_conv_layer(layer_name, input_images, kernel_attrs, norm_attrs=None, pool
     tensor_names = list()
     tensors_dict = dict()
     with tf.variable_scope(layer_name) as variable:
-        kernel, _ = variable_with_weight_decay(name='kernel', shape=kernel_attrs['shape'],
-                                               stddev=kernel_attrs['stddev'])
+        kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
         tensor_names.append('kernel')
         conv = tf.nn.conv2d(input_images, kernel, kernel_attrs['strides'], padding=kernel_attrs['padding'], name='conv')
         tensor_names.append('conv')
@@ -46,7 +45,7 @@ def add_full_layer(layer_name, input_images, kernel_attrs):
     tensor_names = list()
     tensors_dict = dict()
     with tf.variable_scope(layer_name) as variable:
-        kernel, _ = variable_with_weight_decay(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
+        kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
         tensor_names.append('kernel')
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
         fc = tf.add(tf.matmul(input_images, kernel), biase, name='fc')
@@ -62,7 +61,7 @@ def add_softmax_layer(layer_name, input_images, kernel_attrs):
     tensor_names = list()
     tensors_dict = dict()
     with tf.variable_scope(layer_name) as variable:
-        kernel, _ = variable_with_weight_decay(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
+        kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
         tensor_names.append('kernel')
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
         softmax = tf.add(tf.matmul(input_images, kernel), biase, name='softmax')

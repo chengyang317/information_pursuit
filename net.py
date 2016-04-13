@@ -14,6 +14,8 @@ class InforNet(object):
         self.image_shape = data_set.image_shape
         self.image_classes = data_set.image_classes
         self.batch_size = data_set.batch_size
+        self.whole_images = None
+        self.whole_labels = None
         self.check_point_name = 'ConvNetModel_%s_%s.ckpt' % (str(network_percent), str(self.data_set.images_percent))
         self.check_point_path = os.path.join(self.work_path, self.check_point_name)
         self.net_params = {'weight_decay': 0.1, 'learning_rate': 1e-1, 'train_loops': 1000,
@@ -26,7 +28,7 @@ class InforNet(object):
         config.gpu_options.allocator_type = 'BFC'
         self.net_sess = tf.Session(graph=self.net_graph, config=config)
 
-    def net_placeholders(self):
+    def build_placeholders(self):
         shape = (self.batch_size, self.image_shape[0], self.image_shape[1], self.image_shape[2])
         images = tf.placeholder(dtype=tf.float32, shape=shape, name='images')
         labels = tf.placeholder(dtype=tf.int32, shape=shape[0], name='labels')
@@ -35,7 +37,7 @@ class InforNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_logits(self, images):
+    def build_logits(self, images):
         percent = self.network_percent
         tensors_dict = dict()
         # first layer
@@ -83,7 +85,7 @@ class InforNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_loss(self, logits, labels, lambs):
+    def build_loss(self, logits, labels, lambs):
         # put a sigfunction on logits and then transpose
         logits = tf.transpose(framwork.sig_func(logits))
         # according to the labels, erase rows which is not in labels
@@ -109,7 +111,7 @@ class InforNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_total_loss(self):
+    def build_total_loss(self):
         weight_loss = list()
         tensors_dict = {}
         for layer_name in ['conv1', 'conv2', 'conv3', 'full', 'softmax']:
@@ -124,13 +126,13 @@ class InforNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_eval(self, logits, labels):
+    def build_eval(self, logits, labels):
         top_k_op = tf.nn.in_top_k(logits, labels, 1)
         tensors_dict = {'top_k_op': top_k_op}
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_train(self, total_loss):
+    def build_train(self, total_loss):
         optimizer = tf.train.GradientDescentOptimizer(self.net_params['learning_rate'])
         grads = optimizer.compute_gradients(total_loss)
         train_op = optimizer.apply_gradients(grads)
@@ -138,7 +140,7 @@ class InforNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_other(self):
+    def build_other(self):
         init_op = tf.initialize_all_variables()
         saver = tf.train.Saver(tf.all_variables())
         summary_op = tf.merge_all_summaries()
@@ -149,25 +151,25 @@ class InforNet(object):
 
     def build_network(self):
         with self.net_graph.as_default(), tf.device(self.net_device):
-            self.net_placeholders()
-            self.net_logits(self.net_tensors['images'])
-            self.net_loss(self.net_tensors['logits'], self.net_tensors['labels'], self.net_tensors['lambs'])
-            self.net_total_loss()
-            self.net_eval(self.net_tensors['logits'], self.net_tensors['labels'])
-            self.net_train(self.net_tensors['total_loss'])
-            self.net_other()
+            self.build_placeholders()
+            self.build_logits(self.net_tensors['images'])
+            self.build_loss(self.net_tensors['logits'], self.net_tensors['labels'], self.net_tensors['lambs'])
+            self.build_total_loss()
+            self.build_eval(self.net_tensors['logits'], self.net_tensors['labels'])
+            self.build_train(self.net_tensors['total_loss'])
+            self.build_other()
 
-    def fetch_datas(self, que):
+    def fetch_batch_data(self, que):
         image_datas = list()
-        for i in self.batch_size:
+        for i in xrange(self.batch_size):
             image_data = que.get()
             image_datas.append(image_data)
         que.task_done()
         images = np.empty((self.batch_size,) + self.image_shape, dtype=np.float32)
         labels = np.empty(self.batch_size, dtype=np.int32)
-        for i in self.batch_size:
-            images[i, :] = image_data['data'].astype(dtype=np.float32)
-            labels[i] = int(image_data['labels'])
+        for i in xrange(self.batch_size):
+            images[i, :] = image_data['image_data'].astype(dtype=np.float32)
+            labels[i] = np.array(image_data['image_label'])
         return images, labels
 
     def train_network(self, lamb_datas):
@@ -186,7 +188,7 @@ class InforNet(object):
                 if step % 20 == 0:
                     print('step is %d, total_loss is %f' % (step, total_loss_value))
 
-    def init_net_network(self):
+    def init_network(self):
         with self.net_graph.as_default(), tf.device(self.net_device):
             sess = self.net_sess
             net_tensors = self.net_tensors
@@ -195,13 +197,19 @@ class InforNet(object):
             self.train_network(np.array([0.5] * self.batch_size))
 
     def compute_lambs(self):
+        lamb_batch_size = self.lamb_net.batch_size
+        batch_num = self.batch_size / lamb_batch_size
+        batch_images = list()
+        batch_labels = list()
+        for i in xrange(batch_num):
+            images, labels = self.fetch_batch_data(self.data_set.train_que)
 
 
     def train_process(self):
         lambs = self.lamb_net.work()
         self.train_net(lambda_value)
 
-    def end_net_network(self):
+    def end_network(self):
         with self.net_graph.as_default(), tf.device(self.net_device):
             sess = self.net_sess
             net_tensors = self.net_tensors
@@ -343,15 +351,15 @@ class ConvNet(object):
         config.gpu_options.allocator_type = 'BFC'
         self.net_sess = tf.Session(graph=self.net_graph, config=config)
 
-    def net_placeholders(self):
+    def build_placeholders(self):
         shape = (self.batch_size, self.image_shape[0], self.image_shape[1], self.image_shape[2])
         images_placeholder = tf.placeholder(dtype=tf.float32, shape=shape, name='images_placeholder')
-        labels_placeholder = tf.placeholder(dtype=tf.int32, shape=shape[0], name='labels_placeholder')
+        labels_placeholder = tf.placeholder(dtype=tf.int32, shape=(shape[0],), name='labels_placeholder')
         tensors_dict = {'images': images_placeholder, 'labels': labels_placeholder}
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_logits(self, images):
+    def build_logits(self, images):
         percent = self.network_percent
         tensors_dict = dict()
         # first layer
@@ -361,8 +369,7 @@ class ConvNet(object):
                         'padding': 'SAME', 'biase': 0.0}
         norm_attrs = {'depth_radius': 5, 'bias': 1.0, 'alpha': 1e-4, 'beta': 0.75}
         pool_attrs = {'ksize': [1, 3, 3, 1], 'strides': [1, 2, 2, 1], 'padding': 'SAME'}
-        tensors_dict.update(framwork.add_conv_layer(layer_name, input_image, kernel_attrs=kernel_attrs,
-                                                    norm_attrs=norm_attrs, pool_attrs=pool_attrs))
+        tensors_dict.update(framwork.add_conv_layer(layer_name, input_image, kernel_attrs=kernel_attrs, norm_attrs=norm_attrs, pool_attrs=pool_attrs))
         # second layer
         input_image = tensors_dict[layer_name + '_pool']
         layer_name = 'conv2'
@@ -399,14 +406,15 @@ class ConvNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_loss(self, logits, labels):
+    def build_loss(self, logits, labels):
+        labels = tf.cast(labels, tf.int64)
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy_per_example')
         cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
         tensors_dict = {'cross_entropy': cross_entropy, 'cross_entropy_mean': cross_entropy_mean}
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_total_loss(self):
+    def build_total_loss(self):
         weight_loss = list()
         tensors_dict = {}
         for layer_name in ['conv1', 'conv2', 'conv3', 'full', 'softmax']:
@@ -420,13 +428,13 @@ class ConvNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_eval(self, logits, labels):
+    def build_eval(self, logits, labels):
         top_k_op = tf.nn.in_top_k(logits, labels, 1)
         tensors_dict = {'top_k_op': top_k_op}
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_train(self, total_loss):
+    def build_train(self, total_loss):
         optimizer = tf.train.GradientDescentOptimizer(self.net_params['learning_rate'])
         grads = optimizer.compute_gradients(total_loss)
         train_op = optimizer.apply_gradients(grads)
@@ -434,7 +442,7 @@ class ConvNet(object):
         self.tensors_names.extend(tensors_dict.keys())
         self.net_tensors.update(tensors_dict)
 
-    def net_other(self):
+    def build_other(self):
         init_op = tf.initialize_all_variables()
         saver = tf.train.Saver(tf.all_variables())
         summary_op = tf.merge_all_summaries()
@@ -445,25 +453,26 @@ class ConvNet(object):
 
     def build_network(self):
         with self.net_graph.as_default(), tf.device(self.net_device):
-            self.net_placeholders()
-            self.net_logits(self.net_tensors['images'])
-            self.net_loss(self.net_tensors['logits'], self.net_tensors['labels'])
-            self.net_total_loss()
-            self.net_eval(self.net_tensors['logits'], self.net_tensors['labels'])
-            self.net_train(self.net_tensors['total_loss'])
-            self.net_other()
+            self.build_placeholders()
+            self.build_logits(self.net_tensors['images'])
+            self.build_loss(self.net_tensors['logits'], self.net_tensors['labels'])
+            self.build_total_loss()
+            self.build_eval(self.net_tensors['logits'], self.net_tensors['labels'])
+            self.build_train(self.net_tensors['total_loss'])
+            self.build_other()
 
-    def fetch_datas(self, que):
+    def fetch_batch_datas(self, que):
         image_datas = list()
-        for i in self.batch_size:
+        for i in xrange(self.batch_size):
             image_data = que.get()
+            que.task_done()
             image_datas.append(image_data)
-        que.task_done()
         images = np.empty((self.batch_size,) + self.image_shape, dtype=np.float32)
         labels = np.empty(self.batch_size, dtype=np.int32)
-        for i in self.batch_size:
-            images[i, :] = image_data['data'].astype(dtype=np.float32)
-            labels[i] = int(image_data['labels'])
+
+        for i in xrange(self.batch_size):
+            images[i, :] = image_data['image_data'].astype(dtype=np.float32)
+            labels[i] = np.array(image_data['image_label'])
         return images, labels
 
     def train_network(self):
@@ -477,12 +486,14 @@ class ConvNet(object):
             # loss = self.net_tensors['cross_entropy_mean']
             input_dict = {}
             for step in xrange(self.net_params['train_loops']):
-                image_datas, image_labels = self.fetch_datas(self.data_set.train_que)
+                image_datas, image_labels = self.fetch_batch_datas(self.data_set.train_que)
                 input_dict.update({images: image_datas, labels: image_labels})
                 _, total_loss_value = sess.run([train_op, total_loss], feed_dict=input_dict)
                 if step % 20 == 0:
                     print('step is %d, total_loss is %f' % (step, total_loss_value))
-                if step % 1000 == 0:
+                if step % 100 == 0 and step != 0:
+                    self.eval_network()
+                if step % 1000 == 0 and step != 0:
                     self.save_network()
 
     def init_network(self):
@@ -498,6 +509,16 @@ class ConvNet(object):
                 check_point_path = self.check_point_path[:-5] + '_%s.ckpt' % str(step)
             saver = self.net_tensors['saver']
             saver.save(self.net_sess, check_point_path)
+
+    def eval_network(self):
+        batch_num = self.data_set.hdf5.test_hdf5_size / self.batch_size
+        true_count = 0
+        total_count = batch_num * self.batch_size
+        for i in xrange(batch_num):
+            predictions = self.net_sess.run([self.net_tensors['top_k_op']])
+            true_count += np.sum(predictions)
+        precision = float(true_count) / total_count
+        print('precision is %f' % precision)
 
     def work(self):
         self.build_network()
