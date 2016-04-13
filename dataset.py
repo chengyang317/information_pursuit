@@ -6,18 +6,19 @@ import random
 from skimage.io import imread
 from skimage.transform import resize
 from threading import Thread
+import Queue
 
 
 class Reader(Thread):
-    def __init__(self, que, dataset_path):
+    def __init__(self, que, lmdb_path):
         Thread.__init__(self)
         self.que = que
-        self.dataset_path = dataset_path
+        self.lmdb_path = lmdb_path
         self.setDaemon(True)
 
     def run(self):
         while True:
-            env = lmdb.open(self.dataset_path)
+            env = lmdb.open(self.lmdb_path)
             with env.begin() as txn:
                 cursor = txn.cursor()
                 for key, raw_value in cursor:
@@ -26,18 +27,17 @@ class Reader(Thread):
                     self.que.put(image_data)
 
 
-class DataSet(object):
-    def __init__(self, percent, images_path, dataset_path):
+class Lmdb(object):
+    def __init__(self, images_percent, images_path, work_path, image_shape, image_classes):
         self.image_dir = images_path
-        self.dataset_dir = dataset_path
-        if not os.path.exists(self.dataset_dir):
-            os.mkdir(self.dataset_dir)
-        self.percent = percent
-        self.image_shape = (227, 227, 3)
-        self.train_lmdb_name = 'train_caltech_lmdb_%s' % str(percent)
-        self.test_lmdb_name = 'test_caltech_lmdb_%s' % str(percent)
-        self.train_lmdb_path = os.path.join(self.dataset_dir, self.train_lmdb_name)
-        self.test_lmdb_path = os.path.join(self.dataset_dir, self.test_lmdb_name)
+        self.work_path = work_path
+        self.images_percent = images_percent
+        self.image_shape = image_shape
+        self.image_classes = image_classes
+        self.train_lmdb_name = 'train_caltech_lmdb_%s' % str(images_percent)
+        self.test_lmdb_name = 'test_caltech_lmdb_%s' % str(images_percent)
+        self.train_lmdb_path = os.path.join(self.work_path, self.train_lmdb_name)
+        self.test_lmdb_path = os.path.join(self.work_path, self.test_lmdb_name)
         self.train_map_size = 10000000000000
         self.test_map_size = 100000000000000
 
@@ -67,16 +67,16 @@ class DataSet(object):
         if len(image.shape) != 3:
             return None
         image = resize(image, self.image_shape)
-        data = image.astype(dtype=np.float32)
-        return data
+        image = image.astype(dtype=np.float32)
+        return image
 
     def create_image_tuples(self):
         image_path_dic = self.create_image_path_dict()
         train_image_tuples = list()
         test_image_tuples = list()
         for class_label, image_paths in image_path_dic.iteritems():
-            train_nums = int(len(image_paths) * self.percent)
-            test_percent = (1 - self.percent) if self.percent >= 0.8 else 0.2
+            train_nums = int(len(image_paths) * self.images_percent)
+            test_percent = (1 - self.images_percent) if self.images_percent >= 0.8 else 0.2
             test_nums = int(len(image_paths) * test_percent)
             train_image_paths = random.sample(image_paths, train_nums)
             test_image_paths = [image_path for image_path in image_paths if image_path not in train_image_paths]
@@ -88,10 +88,12 @@ class DataSet(object):
         return train_image_tuples, test_image_tuples
 
     def create_lmdb(self):
-        train_env = lmdb.open(self.train_lmdb_path, map_size=self.train_map_size)
-        test_env = lmdb.open(self.test_lmdb_path, map_size=self.test_map_size)
+        if not os.path.exists(self.work_path):
+            os.mkdir(self.work_path)
         train_image_tuples, test_image_tuples = self.create_image_tuples()
         image_data = dict()
+        train_env = lmdb.open(self.train_lmdb_path, map_size=self.train_map_size)
+        test_env = lmdb.open(self.test_lmdb_path, map_size=self.test_map_size)
         with train_env.begin(write=True) as train_txn:
             for index, (image_path, class_label) in enumerate(train_image_tuples):
                 if index == 1:
@@ -109,4 +111,78 @@ class DataSet(object):
                 str_id = '{:08}'.format(index)
                 test_txn.put(str_id.encode('ascii'), pickle.dumps(image_data))
                 print('writing test %s: %s' % (str_id, image_path))
+
+    def work(self):
+        if not self.lmdb_exist():
+            self.create_lmdb()
+
+
+class Dataset(object):
+    def __init__(self, images_path, work_path, batch_size, images_percent, image_shape, image_classes):
+        self.images_path = images_path
+        self.work_path = work_path
+        self.images_percent = images_percent
+        self.batch_size = batch_size
+        self.image_shape = image_shape
+        self.image_classes = image_classes
+        self.lmdb = Lmdb(images_percent=images_percent, images_path=images_path,
+                         work_path=work_path, image_shape=image_shape, image_classes=image_classes)
+        self.train_que = Queue.Queue(maxsize=300)
+        self.test_que = Queue.Queue(maxsize=300)
+        self.train_reader = Reader(self.train_que, self.lmdb.train_lmdb_path)
+        self.test_reader = Reader(self.test_que, self.lmdb.test_lmdb_path)
+
+    def work(self):
+        self.lmdb.work()
+        self.train_reader.start()
+        self.test_reader.start()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
