@@ -1,6 +1,4 @@
 import numpy as np
-import lmdb
-import pickle
 import os
 import random
 from skimage.io import imread
@@ -20,12 +18,13 @@ class Reader(Thread):
 
     def run(self):
         h5f = h5py.File(self.hdf5_path, 'r')
-        data = {}
         while True:
             for index in xrange(self.hdf5_size):
+                data = {}
                 data['image_data'] = h5f['data_%s' % str(index)][:]
-                data['image_label'] = h5f['label_%s' % str(index)][:]
+                data['image_label'] = int(h5f['label_%s' % str(index)].value)
                 self.que.put(data)
+                # print('index %s is putted' % str(index))
 
 
 class Hdf5(object):
@@ -35,8 +34,8 @@ class Hdf5(object):
         self.images_percent = images_percent
         self.image_shape = image_shape
         self.image_classes = image_classes
-        self.train_hdf5_path = os.path.join(self.work_path, 'train_data.h5')
-        self.test_hdf5_path = os.path.join(self.work_path, 'test_data.h5')
+        self.train_hdf5_path = os.path.join(self.work_path, 'train_data_%s.h5' % str(images_percent))
+        self.test_hdf5_path = os.path.join(self.work_path, 'test_data_%s.h5' % str(images_percent))
         self.train_hdf5_size, self.test_hdf5_size = self.hdf5_size()
 
     def hdf5_exist(self):
@@ -103,9 +102,10 @@ class Hdf5(object):
                     image_tuple = random.sample(other_image_tuples, 1)[0]
                     data = self.extract_image(image_tuple[0])
                     class_label = image_tuple[1]
-                break
+                else:
+                    break
             train_h5f.create_dataset('data_%s' % str(index), data=data)
-            train_h5f.create_dataset('label_%s' % str(index), data=class_label)
+            train_h5f.create_dataset('label_%s' % str(index), data=np.array(class_label))
             print('writing train %s: %s' % (str(index), image_path))
 
         for index, (image_path, class_label) in enumerate(test_image_tuples):
@@ -115,9 +115,10 @@ class Hdf5(object):
                     image_tuple = random.sample(other_image_tuples, 1)[0]
                     data = self.extract_image(image_tuple[0])
                     class_label = image_tuple[1]
-                break
+                else:
+                    break
             test_h5f.create_dataset('data_%s' % str(index), data=data)
-            test_h5f.create_dataset('label_%s' % str(index), data=class_label)
+            test_h5f.create_dataset('label_%s' % str(index), data=np.array(class_label))
             print('writing test %s: %s' % (str(index), image_path))
 
         train_h5f.close()
