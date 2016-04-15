@@ -13,6 +13,14 @@ def variable_with_stddev(name, shape, stddev):
     return var
 
 
+def add_input_layer(layer_name, input_attrs):
+    shape = input_attrs['shape']
+    images = tf.placeholder(dtype=tf.float32, shape=shape, name='images_placeholder')
+    labels = tf.placeholder(dtype=tf.int32, shape=(shape[0],), name='labels_placeholder')
+    tensors_dict = {'%s_images' % layer_name: images, '%s_labels' % layer_name: labels}
+    return tensors_dict
+
+
 def add_conv_layer(layer_name, input_images, kernel_attrs, norm_attrs=None, pool_attrs=None):
     tensor_names = list()
     tensors_dict = dict()
@@ -100,6 +108,8 @@ def lamb_func(logit, logic, lamb):
     left = tf.truediv(tf.reduce_mean(logit_neg * logit_neg_exp), z)
     right = tf.reduce_mean(logit_pos)
     return left, right
+
+
 
 
 

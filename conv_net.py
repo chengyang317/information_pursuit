@@ -2,6 +2,62 @@ import numpy as np
 import framwork
 import os
 import tensorflow as tf
+from net import Net
+
+
+class ConvNet(Net):
+    def __init__(self, net_name, batch_size, network_percent, work_path, data_set):
+        super(ConvNet, self).__init__(net_name, batch_size, network_percent, work_path, data_set)
+        self.net_params = {'weight_decay': 0.1, 'learning_rate': 0.1, 'train_loops': 10000,
+                           'devices': ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']}
+        self.layer_attrs = {'input_layer': {'layer_name': 'input', 'shape': (self.batch_size, ) + self.image_shape},
+                            'conv1_layer': {'layer_name': 'conv1', 'shape': [11, 11, 3, int(96 * percent)],
+                                            'stddev': 1e-2, 'strides': [1, 4, 4, 1], 'padding': 'SAME', 'biase': 0.0},
+                            'conv2_layer': {'layer_name': 'conv2', 'shape': [11, 11, 3, int(96 * percent)],
+                                            'stddev': 1e-2, 'strides': [1, 4, 4, 1], 'padding': 'SAME', 'biase': 0.0}}
+        self.net_device = self.net_params['devices'][3]
+
+    def build_network(self):
+        with self.net_graph.as_default(), tf.device(self.net_device):
+            self.build_placeholders()
+            self.build_logits(self.net_tensors['images'])
+            self.build_loss(self.net_tensors['logits'], self.net_tensors['labels'])
+            self.build_total_loss()
+            self.build_eval(self.net_tensors['logits'], self.net_tensors['labels'])
+            self.build_train(self.net_tensors['total_loss'])
+            self.build_other()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class ConvNet(object):
     # network class for Information Pursue Model
