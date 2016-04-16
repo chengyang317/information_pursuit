@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="00e6bb05-0757-4976-bda4-1c08d9a31fdd" name="gpu-bart.eecs.oregonstate.edu" url="http://gpu-bart.eecs.oregonstate.edu">
+        <fileTransfer host="gpu-bart.eecs.oregonstate.edu" port="22" rootFolder="/scratch/yang" accessType="SFTP" password="dff9dfdfdfdadfcfdfd8dfccdfd8dfcfdfcbdfc1df98df9cdf98" username="chenyang">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+          <option name="port" value="22" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

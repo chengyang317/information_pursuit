@@ -74,24 +74,59 @@ def add_softmax_layer(inputs, kernel_attrs):
         kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
         softmax = tf.add(tf.matmul(inputs, kernel), biase, name='softmax')
-        tensors_dict = {'%s_kernel' % layer_name: kernel, '%s_softmax' % layer_name: softmax,
-                        '%s_biase' % layer_name: biase}
+        tensors_dict = {'%s_kernel' % layer_name: kernel, '%s_biase' % layer_name: biase,
+                        '%s_op' % layer_name: softmax}
         return tensors_dict
 
 
-def add_cross_entropy_layer(inputs):
+def add_cross_entropy_layer(inputs, loss_attrs):
+    layer_name = loss_attrs['layer_name']
     logits = inputs[0]
     labels = tf.cast(inputs[1], tf.int64)
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy')
-    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
-    tensors_dict = {'cross_entropy': cross_entropy, 'cross_entropy_mean': cross_entropy_mean}
-    return tensors_dict
+    net_tensors = loss_attrs['net_tensors']
+    tensors_dict = {}
+    with tf.variable_scope(layer_name):
+        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy')
+        cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
+        tensors_dict.update({'%_cross_entropy' % layer_name: cross_entropy,
+                             '%_cross_entropy_mean' % layer_name: cross_entropy_mean})
+        loss_list = [cross_entropy_mean]
+        for tensor_name in loss_attrs['includes']:
+            kernel_loss = tf.mul(tf.nn.l2_loss(net_tensors[tensor_name]), loss_attrs['weight_decay'],
+                                 name=tensor_name + '_loss')
+            tensors_dict.update({'%s_%s' % (layer_name, tensor_name): kernel_loss})
+            loss_list.append(kernel_loss)
+        total_loss = tf.add_n(loss_list, name='total_loss')
+        tensors_dict.update({'%s_op' % layer_name: total_loss})
+        return tensors_dict
 
 
-def add_eval_layer(inputs):
-    top_k_op = tf.nn.in_top_k(inputs[0], inputs[1], 1)
-    tensors_dict = {'top_k_op': top_k_op}
-    return tensors_dict
+def add_train_layer(inputs, train_attrs):
+    layer_name = train_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        optimizer = tf.train.GradientDescentOptimizer(train_attrs['learn_rate'])
+        grads = optimizer.compute_gradients(inputs)
+        train_op = optimizer.apply_gradients(grads, name='train_op')
+        tensors_dict = {'%s_optimizer' % layer_name: optimizer, '%s_grads' % layer_name: grads,
+                        '%s_op': train_op}
+        return tensors_dict
+
+
+def add_eval_layer(inputs, eval_attrs):
+    layer_name = eval_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        top_k_op = tf.nn.in_top_k(inputs[0], inputs[1], 1, name='top_k_op')
+        tensors_dict = {'%s_op' % layer_name: top_k_op}
+        return tensors_dict
+
+
+def add_aux_layer(self, aux_attrs):
+    layer_name = aux_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        init_op = tf.initialize_all_variables()
+        saver = tf.train.Saver(tf.all_variables())
+        tensors_dict = {'%_init_op' % layer_name: init_op, '%s_saver_op' % layer_name: saver}
+        return tensors_dict
 
 
 def sig_func(logits):
