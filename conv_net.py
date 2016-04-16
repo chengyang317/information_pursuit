@@ -11,13 +11,35 @@ class ConvNet(Net):
         super(ConvNet, self).__init__(net_name, batch_size, net_percent, work_path, data_set)
         self.net_params = {'weight_decay': 0.1, 'learning_rate': 0.1, 'train_loops': 10000,
                            'devices': ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']}
-        self.layer_attrs = layer.define_ConvNet_layers(shape=(self.batch_size,) + self.image_shape, net_percent= net_percent)
+        self.layer_attrs = layer.define_ConvNet_layers(shape=(self.batch_size,) + self.image_shape,
+                                                       net_percent= self.net_percent)
 
         self.net_device = self.net_params['devices'][3]
 
     def build_network(self):
+        net_tensors = self.net_tensors
         with self.net_graph.as_default(), tf.device(self.net_device):
+            self.net_tensors.update(framwork.add_input_layer(self.layer_attrs['input_layer']))
 
+            self.net_tensors.update(framwork.add_conv_layer(net_tensors['input_images'],
+                                                            self.layer_attrs['conv1_layer']))
+            self.net_tensors.update(framwork.add_norm_layer(net_tensors['conv1_relu'], self.layer_attrs['norm1_layer']))
+            self.net_tensors.update(framwork.add_pool_layer(net_tensors['norm1_norm'], self.layer_attrs['pool1_layer']))
+
+            self.net_tensors.update(framwork.add_conv_layer(net_tensors['pool1_pool'], self.layer_attrs['conv2_layer']))
+            self.net_tensors.update(framwork.add_norm_layer(net_tensors['conv2_relu'], self.layer_attrs['norm2_layer']))
+            self.net_tensors.update(framwork.add_pool_layer(net_tensors['norm2_norm'], self.layer_attrs['pool2_layer']))
+
+            self.net_tensors.update(framwork.add_conv_layer(net_tensors['pool2_pool'], self.layer_attrs['conv3_layer']))
+            self.net_tensors.update(framwork.add_norm_layer(net_tensors['conv3_relu'], self.layer_attrs['norm3_layer']))
+            self.net_tensors.update(framwork.add_pool_layer(net_tensors['norm3_norm'], self.layer_attrs['pool3_layer']))
+
+            self.net_tensors.update(framwork.add_full_layer(net_tensors['pool3_pool'], self.layer_attrs['full4_layer']))
+
+            if not self.layer_attrs['softmax_layer']['shape'][1]:
+                self.layer_attrs['softmax_layer']['shape'][1] = self.data_set.image_classes
+            self.net_tensors.update(framwork.add_softmax_layer(net_tensors['full4_relu'],
+                                                               self.layer_attrs['softmax5_layer']))
 
 
 

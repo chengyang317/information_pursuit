@@ -13,70 +13,70 @@ def variable_with_stddev(name, shape, stddev):
     return var
 
 
-def add_input_layer(layer_name, input_attrs):
-    shape = input_attrs['shape']
-    images = tf.placeholder(dtype=tf.float32, shape=shape, name='images_placeholder')
-    labels = tf.placeholder(dtype=tf.int32, shape=(shape[0],), name='labels_placeholder')
-    tensors_dict = {'%s_images' % layer_name: images, '%s_labels' % layer_name: labels}
-    return tensors_dict
+def add_input_layer(input_attrs):
+    layer_name = input_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        images = tf.placeholder(dtype=tf.float32, shape=input_attrs['shape'], name='images')
+        labels = tf.placeholder(dtype=tf.int32, shape=(input_attrs['shape'][0],), name='labels')
+        tensors_dict = {'%s_images' % layer_name: images, '%s_labels' % layer_name: labels}
+        return tensors_dict
 
 
-def add_conv_layer(layer_name, input_images, kernel_attrs, norm_attrs=None, pool_attrs=None):
-    tensor_names = list()
-    tensors_dict = dict()
-    with tf.variable_scope(layer_name) as variable:
+def add_conv_layer(inputs, kernel_attrs):
+    layer_name = kernel_attrs['layer_name']
+    with tf.variable_scope(layer_name):
         kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
-        tensor_names.append('kernel')
-        conv = tf.nn.conv2d(input_images, kernel, kernel_attrs['strides'], padding=kernel_attrs['padding'], name='conv')
-        tensor_names.append('conv')
+        conv = tf.nn.conv2d(inputs, kernel, kernel_attrs['strides'], padding=kernel_attrs['padding'], name='conv')
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
-        bias = tf.nn.bias_add(conv, biase)
-        relu = tf.nn.relu(bias, name='relu')
-        tensor_names.append('relu')
-        if norm_attrs:
-            norm = tf.nn.local_response_normalization(relu, depth_radius=norm_attrs['depth_radius'],
-                                                      bias=norm_attrs['bias'], alpha=norm_attrs['alpha'],
-                                                      beta=norm_attrs['beta'], name='norm')
-            tensor_names.append('norm')
-        if pool_attrs:
-            input = norm if norm_attrs else relu
-            pool = tf.nn.max_pool(input, ksize=pool_attrs['ksize'], strides=pool_attrs['strides'],
-                                  padding=pool_attrs['padding'], name='pool')
-            tensor_names.append('pool')
-
-        for tensor_name in tensor_names:
-            tensors_dict.update({layer_name + '_' + tensor_name: eval(tensor_name)})
-    return tensors_dict
+        relu = tf.nn.relu(tf.nn.bias_add(conv, biase), name='relu')
+        tensors_dict = {'%s_kernel' % layer_name: kernel, '%s_conv' % layer_name: conv, '%s_biase' % layer_name: biase,
+                        '%s_relu' % layer_name: relu}
+        return tensors_dict
 
 
-def add_full_layer(layer_name, input_images, kernel_attrs):
-    tensor_names = list()
-    tensors_dict = dict()
-    with tf.variable_scope(layer_name) as variable:
+def add_norm_layer(inputs, norm_attrs):
+    layer_name = norm_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        norm = tf.nn.local_response_normalization(inputs, depth_radius=norm_attrs['depth_radius'],
+                                                  bias=norm_attrs['bias'], alpha=norm_attrs['alpha'],
+                                                  beta=norm_attrs['beta'], name='norm')
+        tensors_dict = {'%s_norm' % layer_name: norm}
+        return tensors_dict
+
+
+def add_pool_layer(inputs, pool_attrs):
+    layer_name = pool_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        pool = tf.nn.max_pool(input, ksize=pool_attrs['ksize'], strides=pool_attrs['strides'],
+                              padding=pool_attrs['padding'], name='pool')
+        tensors_dict = {'%s_pool' % layer_name: pool}
+        return tensors_dict
+
+
+def add_full_layer(inputs, kernel_attrs):
+    layer_name = kernel_attrs['layer_name']
+    with tf.variable_scope(layer_name):
+        shape = kernel_attrs['shape']
+        if not shape[0]:
+            shape[0] = reduce(lambda x, y: x*y, inputs.get_shape().as_list()[1:])
         kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
-        tensor_names.append('kernel')
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
-        fc = tf.add(tf.matmul(input_images, kernel), biase, name='fc')
-        tensor_names.append('fc')
-        relu = tf.nn.relu(fc, name='relu')
-        tensor_names.append('relu')
-        for tensor_name in tensor_names:
-            tensors_dict.update({layer_name + '_' + tensor_name: eval(tensor_name)})
-    return tensors_dict
+        full = tf.add(tf.matmul(inputs, kernel), biase, name='full')
+        relu = tf.nn.relu(full, name='relu')
+        tensors_dict = {'%s_kernel' % layer_name: kernel, '%s_full' % layer_name: full, '%s_biase' % layer_name: biase,
+                        '%s_relu' % layer_name: relu}
+        return tensors_dict
 
 
-def add_softmax_layer(layer_name, input_images, kernel_attrs):
-    tensor_names = list()
-    tensors_dict = dict()
-    with tf.variable_scope(layer_name) as variable:
+def add_softmax_layer(inputs, kernel_attrs):
+    layer_name = kernel_attrs['layer_name']
+    with tf.variable_scope(layer_name):
         kernel = variable_with_stddev(name='kernel', shape=kernel_attrs['shape'], stddev=kernel_attrs['stddev'])
-        tensor_names.append('kernel')
         biase = variable_on_cpu('biase', [kernel_attrs['shape'][-1]], tf.constant_initializer(kernel_attrs['biase']))
-        softmax = tf.add(tf.matmul(input_images, kernel), biase, name='softmax')
-        tensor_names.append('softmax')
-        for tensor_name in tensor_names:
-            tensors_dict.update({layer_name + '_' + tensor_name: eval(tensor_name)})
-    return tensors_dict
+        softmax = tf.add(tf.matmul(inputs, kernel), biase, name='softmax')
+        tensors_dict = {'%s_kernel' % layer_name: kernel, '%s_softmax' % layer_name: softmax,
+                        '%s_biase' % layer_name: biase}
+        return tensors_dict
 
 
 def sig_func(logits):

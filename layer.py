@@ -17,7 +17,7 @@ def define_ConvNet_layers(shape, net_percent):
                                     'padding': 'SAME'},
                     'full4_layer': {'layer_name': 'full4', 'shape': [None, int(4096 * net_percent)], 'stddev': 1e-2,
                                     'biase': 0.1},
-                    'softmax_layer': {'layer_name': 'softmax1', 'shape': [int(4096 * net_percent, None)],
-                                      'stddev': 1e-2, 'biase': 0.1}
+                    'softmax5_layer': {'layer_name': 'softmax5', 'shape': [int(4096 * net_percent, None)],
+                                       'stddev': 1e-2, 'biase': 0.1}
                     }
     return layers_attrs
