@@ -12,7 +12,7 @@ class ConvNet(Net):
         self.net_params = {'weight_decay': 0.1, 'learning_rate': 0.1, 'train_loops': 10000,
                            'devices': ['/cpu:0', '/gpu:0', '/gpu:1', '/gpu:2']}
         self.layer_attrs = layer.define_ConvNet_layers(shape=(self.batch_size,) + self.image_shape,
-                                                       net_percent= self.net_percent)
+                                                       net_percent=self.net_percent)
 
         self.net_device = self.net_params['devices'][3]
 

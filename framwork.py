@@ -79,6 +79,21 @@ def add_softmax_layer(inputs, kernel_attrs):
         return tensors_dict
 
 
+def add_cross_entropy_layer(inputs):
+    logits = inputs[0]
+    labels = tf.cast(inputs[1], tf.int64)
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy')
+    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
+    tensors_dict = {'cross_entropy': cross_entropy, 'cross_entropy_mean': cross_entropy_mean}
+    return tensors_dict
+
+
+def add_eval_layer(inputs):
+    top_k_op = tf.nn.in_top_k(inputs[0], inputs[1], 1)
+    tensors_dict = {'top_k_op': top_k_op}
+    return tensors_dict
+
+
 def sig_func(logits):
     saturation = 6
     logits_sig = saturation * (2 / (1 + tf.exp(-2 * logits / saturation)) - 1)
